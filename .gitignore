@@ -27,6 +27,7 @@ Thumbs.db
 # SSL证书
 *.pem
 *.key
+ssl/
 
 # 日志
 *.log
