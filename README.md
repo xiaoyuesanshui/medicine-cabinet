@@ -31,14 +31,14 @@
 ```
 ① zbar 扫条码
    ↓ 有追溯码/69条码? → 调用条码API → 直接返回完整数据
-   
+
 ② AI 视觉识别
    ↓ 提取18个字段（批准文号优先）
-   
+
 ③ API 补全
    ├─ a. AI有批准文号? → 批准文号API覆盖全部字段 ✅
    └─ b. 无批准文号但有名称+信息不全? → 名称API补全
-   
+
 ④ 返回结果
 ```
 
@@ -65,27 +65,39 @@
 | notes | 备注 | ❌ | ✅ |
 | location | 位置编码 | ❌ | ✅ |
 
-## 部署到 Debian 12
+## 部署指南
 
-### 1. 上传项目到服务器
+### 前置要求
+
+- Linux 服务器（推荐 Debian 12 / Ubuntu 22.04）
+- Python 3.9+
+- 域名或公网IP（可选，用于HTTPS）
+
+### 1. 克隆项目
 
 ```bash
-scp -r medicine-cabinet/ bing@192.168.50.50:/home/bing/
-ssh bing@192.168.50.50
+git clone https://github.com/xiaoyuesanshui/medicine-cabinet.git
+cd medicine-cabinet
 ```
 
 ### 2. 运行部署脚本
 
 ```bash
-cd /home/bing/medicine-cabinet
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
+部署脚本会自动：
+- 安装 Python 依赖
+- 安装系统依赖（zbarimg 等）
+- 创建数据库
+- 配置 systemd 服务
+
 ### 3. 配置环境变量
 
 ```bash
-sudo nano /home/bing/medicine-cabinet/backend/.env
+sudo cp backend/.env.example backend/.env
+sudo nano backend/.env
 ```
 
 填入你的 API Keys：
@@ -104,15 +116,50 @@ TENCENT_SECRET_ID=your-secret-id
 TENCENT_SECRET_KEY=your-secret-key
 ```
 
-### 4. 重启服务
+**获取 API Keys：**
+- AI API: OpenAI / DeepSeek / Moonshot / 智谱AI 官网注册
+- 极速数据: https://www.jisuapi.com 注册
+- 腾讯云OCR: https://cloud.tencent.com 注册
+
+### 4. 启动服务
 
 ```bash
-sudo systemctl restart medicine-cabinet
+sudo systemctl enable medicine-cabinet
+sudo systemctl start medicine-cabinet
 ```
 
-### 5. 手机访问
+### 5. 访问应用
 
-浏览器访问：`http://192.168.50.50:5002`
+浏览器访问：`http://your-server-ip:5002`
+
+**可选：配置 HTTPS**
+
+```bash
+# 安装 certbot
+sudo apt install certbot
+
+# 获取证书（需要域名）
+sudo certbot certonly --standalone -d yourdomain.com
+
+# 修改 Nginx/Apache 配置使用证书
+```
+
+## 本地运行（开发模式）
+
+```bash
+# 安装依赖
+cd backend
+pip install -r requirements.txt
+
+# 配置环境变量
+cp .env.example .env
+nano .env
+
+# 启动开发服务器
+python app.py
+```
+
+浏览器访问：`http://localhost:5000`
 
 ## 服务管理
 
@@ -138,7 +185,6 @@ medicine-cabinet/
 │   │   ├── medicines.py    # 药品管理路由
 │   │   └── scan.py         # 扫描识别路由
 │   ├── utils/
-│   │   ├── ocr.py          # OCR识别
 │   │   ├── ai_parser.py    # AI解析
 │   │   └── drug_api.py     # 药品API查询
 │   ├── requirements.txt    # Python依赖
