@@ -748,8 +748,6 @@ async function saveMedicine() {
     }
     
     try {
-        // saveMedicine 永远用 POST 创建新记录
-        // （medicine_id 是外部API的ID，不是我们数据库的主键ID）
         const response = await fetch('/api/medicines', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1164,19 +1162,10 @@ async function saveEdit() {
         shelf_life_after_opening: formData.get('shelf_life_after_opening') ? parseInt(formData.get('shelf_life_after_opening')) : null
     };
     
-    // 允许清空的字段列表（这些字段的空字符串需要发送给后端）
-    const clearableFields = ['alias', 'notes', 'ingredients', 'indications', 'dosage', 
-                             'adverse_reactions', 'contraindications', 'precautions', 
-                             'storage', 'description', 'manufacturer'];
-    
-    // 只移除非必填的空值（允许清空的字段保留空字符串）
+    // 移除空值字段
     Object.keys(data).forEach(key => {
-        if ((data[key] === '' || data[key] === undefined) && !clearableFields.includes(key)) {
+        if (data[key] === '' || data[key] === undefined) {
             delete data[key];
-        }
-        // 空字符串转为null，让后端正确清空
-        if (data[key] === '' && clearableFields.includes(key)) {
-            data[key] = null;
         }
     });
     

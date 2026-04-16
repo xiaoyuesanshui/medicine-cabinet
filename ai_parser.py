@@ -117,12 +117,14 @@ def call_ai_api(raw_text: str, api_key: str, base_url: str, model: str) -> dict:
 1. name: 药品名称（通用名，不是商品名）
 2. ingredients: 主要成分
 3. indications: 适应症/功能主治
-4. is_prescription: 是否处方药（true/false）
+4. is_prescription: 是否处方药（判断规则：看到"OTC"标识或"非处方药"字样→填false；看到"RX"标识或"处方药"字样→填true；无法确定→填null）
 5. expiry_date: 有效期/过期日期（格式：YYYY-MM-DD，如果只有年月，用该月最后一天）
 6. category: 分类（internal=内服, external=外用, topical=局部用药, supplement=保健品, other=其他）
 7. manufacturer: 生产厂家
 8. dosage: 用法用量
 9. approval_number: 批准文号（如国药准字HXXXXXXXX）
+
+【重要】alias（别名）是用户自定义标签，AI不要填写此字段。
 
 请严格返回JSON格式，不要包含任何其他文字。如果某个字段无法确定，使用null或空字符串。
 """
@@ -243,28 +245,53 @@ def call_ai_vision(image_path: str, api_key: str, base_url: str, model: str) -> 
     with open(image_path, 'rb') as f:
         image_base64 = base64.b64encode(f.read()).decode('utf-8')
     
-    system_prompt = """你是一个专业的药品信息识别专家。请仔细查看这张药盒图片，提取以下所有信息：
+    system_prompt = """你是一个专业的药品信息识别专家，专门用于识别中国药品包装并提取完整信息。
 
-1. name: 药品名称（通用名）
-2. alias: 商品名（如有）
-3. specification: 规格（如 15g*6袋、10片/板*3板等）
-4. drug_type: 剂型（如 颗粒剂、片剂、胶囊、口服液、注射液、软膏等）
-5. ingredients: 主要成分
-6. indications: 适应症/功能主治（简短描述）
-7. description: 完整说明书文字（包含用法用量、不良反应、禁忌、注意事项等全部内容，尽量完整保留原文格式）
-8. is_prescription: 是否处方药（true/false，看是否有OTC标记或RX标记）
-9. category: 分类（internal=内服, external=外用, topical=局部用药, supplement=保健品, other=其他）
-10. manufacturer: 生产厂家
-11. approval_number: 批准文号（国药准字+字母+数字）
-12. barcode: 条形码数字（通常13位，以69开头）或药品本位码（869开头20位）
-13. dosage: 用法用量
-14. shelf_life: 有效期时长（如 36个月、24个月等）
-15. adverse_reactions: 不良反应
-16. contraindications: 禁忌
-17. precautions: 注意事项
-18. storage: 贮藏条件
+## 识别原则（重要！请严格按此优先级执行）
+- **第一优先级：找到批准文号！** 这是最关键的字段。批准文号格式固定为"国药准字"+1位字母(H/Z/S/J)+8位数字，如"国药准字H20230001"。图片上通常在正面或侧面，字体较小。务必仔细寻找。
+- 药品名称通常是包装正面最大最醒目的文字
+- 如果图片只拍到部分包装（如只有批准文号区域），也要尽力提取可见信息
+- 批准文号比条码更重要——即使没有药品名称，只要有批准文号就能查到完整信息
+- 条形码通常为13位数字（EAN-13，以69开头），或20位药品本位码（以869开头）
+- 有效期通常标注为"有效期XX个月"
+- 如果图片模糊或文字被遮挡，尽量推断但标记为低置信度
 
-请严格返回JSON格式，不要包含任何其他文字。如果某个字段无法从图片中识别，使用null或空字符串。description字段尽量保留图片上的全部文字。"""
+## 需要提取的字段（共18个）
+
+### 基础信息（6个）
+1. name: 药品通用名（必填，如"阿莫西林胶囊"、"布洛芬缓释胶囊"）
+2. alias: ⚠️⚠️⚠️ 严格禁止！此字段必须始终填 null。绝对不要填任何文字。alias是用户个人记忆标签（如"感冒药1"、"爸爸的胃药"），与药品包装上的商品名/品牌名/商标完全无关。无论包装上写什么商品名，都不要填入此字段。此字段永远为null。
+3. specification: 包装规格（如"0.25g×12粒/盒"、"10ml×10支"、"15g:15mg×6袋/盒"）
+4. drug_type: 剂型标准名称（选值：片剂/胶囊剂/颗粒剂/口服溶液剂/注射剂/软膏剂/乳膏剂/凝胶剂/滴眼剂/栓剂/散剂/酊剂/气雾剂/其他）
+5. barcode: 条形码或药品本位码（纯数字，没有则填null）
+6. approval_number: 批准文号（完整字符串，没有则填null）
+
+### 生产与分类（3个）
+7. manufacturer: 生产厂家全称（如"华润三九医药股份有限公司"）
+8. is_prescription: 是否处方药（判断规则：看到"OTC"标识或"非处方药"字样→填false；看到"RX"标识或"处方药"字样→填true；无法确定→填null）
+9. category: 用药途径分类（internal=口服内服 / external=皮肤外用 / topical=黏膜局部(眼耳鼻口肛) / supplement=保健食品 / other=其他）
+
+### 成分与功效（2个）
+10. ingredients: 主要成分及含量（如"每片含布洛芬0.3g"）
+11. indications: 适应症或功能主治（简洁描述治什么病，不超过100字）
+
+### 用法与安全（5个）
+12. dosage: 用法用量（如"口服，成人一次1片，一日3次，饭后服用"）
+13. adverse_reactions: 不良反应（列出已知副作用，没有则填null）
+14. contraindications: 禁忌（禁用人群和情况，没有则填null）
+15. precautions: 注意事项（重要提醒，没有则填null）
+16. storage: 贮藏条件（如"密封，在干燥处保存"）
+
+### 保质期（2个）
+17. shelf_life: 有效期时长（如"36个月"、"24个月"，只写数字+单位）
+18. description: 完整说明书原文（尽可能保留图片上所有说明性文字，包含用法用量、不良反应、禁忌、注意事项、贮藏、包装等信息。如果文字太多可省略重复内容，但保留关键信息。用换行符分隔不同段落）
+
+## 返回要求
+- 严格返回合法JSON格式，不要加markdown代码块标记
+- 所有字段均为字符串，布尔字段(is_prescription)使用true/false/null
+- 无法识别的字段填null，不要编造或猜测
+- name是唯一必须字段，如果完全无法识别药品名称，name填"未知药品"
+"""
     
     headers = {
         'Authorization': f'Bearer {api_key}',

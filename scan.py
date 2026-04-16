@@ -156,27 +156,25 @@ def scan_medicine():
                 import traceback
                 traceback.print_exc()
 
-        # ===== 步骤3：根据AI识别结果多路API补全 =====
+        # ===== 步骤3：AI识别后的API补全（优先批准文号，不再重复查条码） =====
         
         if ai_parsed:
             api_hit = False
-            has_name = bool(ai_parsed.get('name'))
             
-            # 3a: 如果AI识别到了批准文号 → 查批准文号API（最准确，覆盖全部字段）
+            # ★ 第一优先级：AI识别到批准文号 → 直接查API覆盖全部字段
             ai_approval = (ai_parsed.get('approval_number') or '').strip()
-            if ai_approval and re.match(r'国药准字[HSZJ]\d{8}', ai_approval):
-                print(f"步骤3a: AI识别到批准文号 {ai_approval}，查询API...")
+            if re.match(r'国药准字[HSZJ]\d{8}', ai_approval):
+                print(f"步骤3a [第一优先]: AI识别到批准文号 {ai_approval}，查询API...")
                 try:
                     r = query_by_approval(ai_approval)
                     if r['success']:
                         info = r['data']
                         APICacheManager.save_cache(ai_approval, info)
-                        # 用API完整数据替换，保留AI的name和barcode
+                        # 用API完整数据替换，保留AI的name
                         saved_name = ai_parsed.get('name')
-                        saved_barcode = ai_parsed.get('barcode')
                         ai_parsed.update(info)
-                        if saved_name: ai_parsed['name'] = saved_name
-                        if saved_barcode: ai_parsed['barcode'] = saved_barcode
+                        if saved_name and not info.get('name'):
+                            ai_parsed['name'] = saved_name
                         ai_parsed['_source'] = 'approval_api'
                         api_hit = True
                         print(f"  ✓ 批准文号API成功: {info.get('name')}")
@@ -185,40 +183,15 @@ def scan_medicine():
                 except Exception as e:
                     print(f"  ✗ 批准文号API异常: {e}")
             
-            # 3b: 如果AI识别到了69开头的条码 → 查条码API
-            if not api_hit and is_domestic_barcode(ai_parsed.get('barcode', '')):
-                bc = ai_parsed['barcode']
-                print(f"步骤3b: AI识别到条码 {bc}，查询API...")
-                try:
-                    cd = APICacheManager.get_valid_cache(bc)
-                    if cd:
-                        for k, v in cd.items():
-                            if not ai_parsed.get(k) and v: ai_parsed[k] = v
-                        ai_parsed['_source'] = 'ai_vision_plus_barcode_api'
-                        api_hit = True
-                        print(f"  ✓ 条码命中缓存")
-                    else:
-                        r = query_by_barcode(bc)
-                        if r['success']:
-                            info = r['data']
-                            APICacheManager.save_cache(bc, info)
-                            for k, v in info.items():
-                                if not ai_parsed.get(k) and v: ai_parsed[k] = v
-                            ai_parsed['_source'] = 'ai_vision_plus_barcode_api'
-                            api_hit = True
-                            print(f"  ✓ 条码API成功")
-                except Exception as e:
-                    print(f"  ✗ 条码API异常: {e}")
-            
-            # 3c: 关键信息不全且有名称时，按名称查API补全
-            if not api_hit and has_name:
+            # ★ 第二优先级：无批准文号但有名称 → 按名称查API补全缺失信息
+            if not api_hit and ai_parsed.get('name'):
+                name = ai_parsed.get('name', '')
                 key_fields_ok = bool(
                     ai_parsed.get('ingredients') 
                     and (ai_parsed.get('dosage') or ai_parsed.get('description'))
                 )
                 if not key_fields_ok:
-                    name = ai_parsed.get('name', '')
-                    print(f"步骤3c: 名称'{name}'关键信息不完整，按名称查询API...")
+                    print(f"步骤3b [第二优先]: 名称'{name}'关键信息不完整，按名称查询API...")
                     try:
                         r = query_by_name(name)
                         if r['success']:
@@ -226,6 +199,7 @@ def scan_medicine():
                             for k, v in info.items():
                                 if not ai_parsed.get(k) and v: ai_parsed[k] = v
                             ai_parsed['_source'] = 'ai_vision_plus_name_api'
+                            api_hit = True
                             print(f"  ✓ 名称API成功: {info.get('name')}")
                         else:
                             print(f"  ✗ 名称API未找到")
