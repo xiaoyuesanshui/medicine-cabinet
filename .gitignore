@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+
+# 数据库文件（敏感数据，不提交）
+data/*.db
+*.db
+
+# 上传文件
+uploads/
+test_images/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL证书
+*.pem
+*.key
+
+# 日志
+*.log
+
+# 测试/临时文件
+TEST_REPORT.md
+test_*.py

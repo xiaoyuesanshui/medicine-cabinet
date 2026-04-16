@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>药品管理</title>
+    <link rel="stylesheet" href="css/style.css?v=6">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <h1>💊 药品管理</h1>
+            <button id="scanBtn" class="btn-primary">📷 扫码添加</button>
+            <button onclick="showInventoryOverview()" class="btn-secondary" style="font-size:13px; padding:6px 12px;">📋 库存列表</button>
+        </header>
+
+        <!-- 统计卡片 - 可点击筛选 -->
+        <section class="stats">
+            <div class="stat-card" onclick="setFilter('all')" id="cardAll">
+                <span class="stat-number" id="statTotal">0</span>
+                <span class="stat-label">全部药品</span>
+            </div>
+            <div class="stat-card warning" onclick="setFilter('warning')" id="cardWarning">
+                <span class="stat-number" id="statWarning">0</span>
+                <span class="stat-label">即将过期</span>
+            </div>
+            <div class="stat-card danger" onclick="setFilter('expired')" id="cardExpired">
+                <span class="stat-number" id="statExpired">0</span>
+                <span class="stat-label">已过期</span>
+            </div>
+        </section>
+
+        <!-- 搜索和过滤 -->
+        <section class="filters">
+            <input type="text" id="searchInput" placeholder="🔍 搜索药名、成分、适应症...">
+            <input type="text" id="locationFilter" placeholder="📍 位置如 A3" style="width: 100px;">
+            <select id="categoryFilter">
+                <option value="">全部分类</option>
+                <option value="internal">💊 内服</option>
+                <option value="external">🧴 外用</option>
+                <option value="topical">👁️ 局部用药</option>
+                <option value="supplement">🍊 保健品</option>
+                <option value="other">📦 其他</option>
+            </select>
+        </section>
+
+        <!-- 药品列表 -->
+        <section class="medicine-list" id="medicineList">
+            <!-- 动态生成 -->
+        </section>
+
+        <!-- 库存总览 -->
+        <section class="inventory-overview" id="inventoryOverview" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 15px; background:#f8f9fa; border-bottom:1px solid #e0e0e0;">
+                <h3 style="margin:0; font-size:16px;">📋 库存总览 (<span id="inventoryTotal">0</span> 个批次)</h3>
+                <button onclick="toggleInventoryList()" style="background:none; border:none; font-size:20px; cursor:pointer;">&times;</button>
+            </div>
+            <div id="inventoryList" style="padding:10px 15px; max-height:60vh; overflow-y:auto;">
+            </div>
+        </section>
+
+        <!-- 空状态 -->
+        <div id="emptyState" class="empty-state" style="display: none;">
+            <div class="empty-icon">💊</div>
+            <p>还没有药品记录</p>
+            <p class="empty-hint">点击上方"扫码添加"开始录入</p>
+        </div>
+    </div>
+
+    <!-- 扫描弹窗 -->
+    <div id="scanModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📷 扫码/拍照识别</h2>
+                <button class="close-btn" onclick="closeScanModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- 扫码选项 -->
+                <div class="scan-tabs">
+                    <button class="scan-tab active" onclick="switchScanMode('barcode')">📱 扫条形码</button>
+                    <button class="scan-tab" onclick="switchScanMode('photo')">📷 拍照识别</button>
+                </div>
+                
+                <!-- 条形码扫描 -->
+                <div id="barcodeScanArea" class="scan-area">
+                    <div id="barcodeReader" style="width: 100%; max-width: 400px; margin: 0 auto;">
+                        <video id="barcodeVideo" style="width: 100%; display: none;"></video>
+                        <canvas id="barcodeCanvas" style="display: none;"></canvas>
+                    </div>
+                    <div class="upload-placeholder" id="barcodePlaceholder">
+                        <div class="upload-icon">📱</div>
+                        <p>点击开启摄像头扫描条形码</p>
+                        <p class="upload-hint">对准药品包装上的条形码或追溯码</p>
+                        <button class="btn-primary" onclick="startBarcodeScan()">开启扫描</button>
+                    </div>
+                    <div id="barcodeResult" style="display: none; margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 8px;">
+                        <p>识别到: <strong id="barcodeValue"></strong></p>
+                        <button class="btn-primary" onclick="queryByBarcode()">查询药品信息</button>
+                    </div>
+                </div>
+                
+                <!-- 拍照识别 -->
+                <div id="photoScanArea" class="scan-area" style="display: none;">
+                    <div class="upload-area" id="uploadArea">
+                        <input type="file" id="imageInput" accept="image/*" capture="environment" style="display: none;">
+                        <div class="upload-placeholder">
+                            <div class="upload-icon">📷</div>
+                            <p>点击拍照或选择图片</p>
+                            <p class="upload-hint">建议对准药盒正面，光线充足</p>
+                        </div>
+                    </div>
+                </div>
+                <div id="previewArea" style="display: none;">
+                    <img id="previewImage" alt="预览">
+                    <div id="scanProgress">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <p class="progress-text">正在识别...</p>
+                    </div>
+                </div>
+                <div id="scanResult" style="display: none;">
+                    <h3>识别结果</h3>
+                    <form id="medicineForm">
+                        <div class="form-group">
+                            <label>药品名称 *</label>
+                            <input type="text" id="formName" required>
+                        </div>
+                        <div class="form-group">
+                            <label>别名</label>
+                            <input type="text" id="formAlias" placeholder="例如：人工泪液">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>规格</label>
+                                <input type="text" id="formSpecification" readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>剂型</label>
+                                <input type="text" id="formDrugType" readonly style="background: #f5f5f5;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>成分</label>
+                            <textarea id="formIngredients" rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>适应症</label>
+                            <textarea id="formIndications" rows="2"></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>分类</label>
+                                <select id="formCategory">
+                                    <option value="internal">内服</option>
+                                    <option value="external">外用</option>
+                                    <option value="topical">局部用药</option>
+                                    <option value="supplement">保健品</option>
+                                    <option value="other">其他</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>处方药</label>
+                                <select id="formPrescription">
+                                    <option value="">未知</option>
+                                    <option value="true">是</option>
+                                    <option value="false">否</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>位置</label>
+                                <div class="location-select">
+                                    <select id="formLocationRow">
+                                        <option value="">行</option>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                        <option value="C">C</option>
+                                        <option value="D">D</option>
+                                        <option value="E">E</option>
+                                        <option value="F">F</option>
+                                        <option value="G">G</option>
+                                        <option value="H">H</option>
+                                        <option value="I">I</option>
+                                        <option value="J">J</option>
+                                        <option value="K">K</option>
+                                        <option value="L">L</option>
+                                        <option value="M">M</option>
+                                        <option value="N">N</option>
+                                        <option value="O">O</option>
+                                        <option value="P">P</option>
+                                        <option value="Q">Q</option>
+                                        <option value="R">R</option>
+                                        <option value="S">S</option>
+                                        <option value="T">T</option>
+                                        <option value="U">U</option>
+                                        <option value="V">V</option>
+                                        <option value="W">W</option>
+                                        <option value="X">X</option>
+                                        <option value="Y">Y</option>
+                                        <option value="Z">Z</option>
+                                    </select>
+                                    <select id="formLocationCol">
+                                        <option value="">列</option>
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5</option>
+                                        <option value="6">6</option>
+                                        <option value="7">7</option>
+                                        <option value="8">8</option>
+                                        <option value="9">9</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                        <option value="13">13</option>
+                                        <option value="14">14</option>
+                                        <option value="15">15</option>
+                                        <option value="16">16</option>
+                                        <option value="17">17</option>
+                                        <option value="18">18</option>
+                                        <option value="19">19</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>有效期</label>
+                                <input type="date" id="formExpiry">
+                            </div>
+                            <div class="form-group">
+                                <label>开封后保质期(天)</label>
+                                <input type="number" id="formShelfLifeAfterOpening" min="1" max="3650" placeholder="如: 30">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>参考价格</label>
+                                <input type="text" id="formRetailPrice" readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>生产厂家</label>
+                                <input type="text" id="formManufacturer">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>批准文号</label>
+                                <input type="text" id="formApprovalNumber" readonly style="background: #f5f5f5;">
+                            </div>
+                            <div class="form-group">
+                                <label>条码</label>
+                                <input type="text" id="formBarcode" readonly style="background: #f5f5f5;">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>用法用量</label>
+                            <textarea id="formDosage" rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>说明书</label>
+                            <textarea id="formDescription" rows="4" readonly style="background: #f5f5f5; font-size: 12px;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>备注</label>
+                            <textarea id="formNotes" rows="2"></textarea>
+                        </div>
+                        <!-- 隐藏字段存储 API 返回的原始值 -->
+                        <input type="hidden" id="formMedicineId">
+                        <input type="hidden" id="formUnit">
+                        <input type="hidden" id="formDrugImage">
+                        <input type="hidden" id="formPrescriptionType">
+                    </form>
+                </div>
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn-secondary" onclick="closeScanModal()">取消</button>
+                <button class="btn-primary" id="confirmBtn" style="display: none;" onclick="saveMedicine()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>药品详情</h2>
+                <button class="close-btn" onclick="closeDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="detailContent">
+                <!-- 动态生成 -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-danger" onclick="deleteMedicine()">删除</button>
+                <button class="btn-secondary" onclick="toggleEditMode()">编辑</button>
+                <button class="btn-secondary" onclick="closeDetailModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 条形码扫描库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
+    <script src="js/app.js?v=1.0.0"></script>
+</body>
+</html>
