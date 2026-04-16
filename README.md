@@ -1,35 +1,83 @@
 # 💊 药品管理系统
 
-基于 Flask + 手机拍照的药品管理应用，帮你整理家里的一抽屉药。
+基于 Flask + AI 视觉识别的药品管理应用，帮你整理家里的一抽屉药。
 
 ## 功能特点
 
-- 📷 **拍照识别**：手机拍药盒，OCR + AI 自动提取药品信息
-- 💊 **药品管理**：增删改查，支持手动编辑
+- 📷 **拍照识别**：手机拍药盒，AI 自动提取药品信息（支持批准文号优先查询）
+- 📊 **条码扫描**：Zbar 扫描追溯码和69条码，自动调用API获取药品信息
+- 💊 **药品管理**：增删改查，支持手动编辑，自定义别名方便记忆
 - ⏰ **过期提醒**：首页显示即将过期（30天内）和已过期药品
+- 📦 **开封管理**：支持标记开封日期，自动计算开封后保质期
+- 📍 **位置编码**：A-Z/1-19 位置编码，方便药品定位
 - 🔍 **全文搜索**：药名、成分、适应症快速查找
 - 📂 **分类浏览**：内服/外用/局部/保健品分类管理
+- 📋 **库存总览**：纯文本列表显示，方便复制粘贴统计
+- 🤖 **AI标记**：明确标识AI识别的药品，提醒核查
 
 ## 技术栈
 
-- **后端**：Python Flask + SQLAlchemy + SQLite
-- **OCR**：Tesseract（本地）+ 腾讯云OCR（可选）
+- **后端**：Python Flask + SQLAlchemy + SQLite + gunicorn
+- **OCR**：腾讯云OCR（可选，提高中文识别准确率）
 - **AI解析**：OpenAI兼容API（支持 DeepSeek / Moonshot / 智谱等）
+- **条码扫描**：Zbar (zbarimg)
+- **药品查询**：极速数据 jisuapi.com API
 - **前端**：原生 JavaScript，移动端优化
+
+## 扫描识别流程
+
+系统采用4步扫描流程，按优先级依次尝试：
+
+```
+① zbar 扫条码
+   ↓ 有追溯码/69条码? → 调用条码API → 直接返回完整数据
+   
+② AI 视觉识别
+   ↓ 提取18个字段（批准文号优先）
+   
+③ API 补全
+   ├─ a. AI有批准文号? → 批准文号API覆盖全部字段 ✅
+   └─ b. 无批准文号但有名称+信息不全? → 名称API补全
+   
+④ 返回结果
+```
+
+## 数据字段说明
+
+| 字段 | 说明 | AI识别 | 手动编辑 |
+|------|------|--------|---------|
+| name | 药品名称 | ✅ 必填 | ✅ |
+| approval_number | 批准文号 | ✅ 优先 | ✅ |
+| manufacturer | 生产厂家 | ✅ | ✅ |
+| specification | 规格 | ✅ | ✅ |
+| drug_type | 药品类型 | ✅ | ✅ |
+| category | 分类 | ✅ | ✅ |
+| ingredients | 成分 | ✅ | ✅ |
+| indications | 适应症 | ✅ | ✅ |
+| dosage | 用法用量 | ✅ | ✅ |
+| adverse_reactions | 不良反应 | ✅ | ✅ |
+| contraindications | 禁忌 | ✅ | ✅ |
+| precautions | 注意事项 | ✅ | ✅ |
+| storage | 贮藏 | ✅ | ✅ |
+| description | 说明书 | ✅ | ✅ |
+| barcode | 条码 | ✅ | ✅ |
+| alias | 别名 | ❌ 禁止 | ✅ 用户自定义 |
+| notes | 备注 | ❌ | ✅ |
+| location | 位置编码 | ❌ | ✅ |
 
 ## 部署到 Debian 12
 
 ### 1. 上传项目到服务器
 
 ```bash
-scp -r medicine-cabinet/ user@192.168.50.50:/opt/
-ssh user@192.168.50.50
+scp -r medicine-cabinet/ bing@192.168.50.50:/home/bing/
+ssh bing@192.168.50.50
 ```
 
 ### 2. 运行部署脚本
 
 ```bash
-cd /opt/medicine-cabinet
+cd /home/bing/medicine-cabinet
 chmod +x deploy.sh
 ./deploy.sh
 ```
@@ -37,16 +85,19 @@ chmod +x deploy.sh
 ### 3. 配置环境变量
 
 ```bash
-sudo nano /opt/medicine-cabinet/backend/.env
+sudo nano /home/bing/medicine-cabinet/backend/.env
 ```
 
-填入你的 AI API Key：
+填入你的 API Keys：
 
 ```env
 # AI API配置（OpenAI兼容格式）
 AI_API_KEY=your-api-key-here
 AI_BASE_URL=https://api.openai.com/v1
 AI_MODEL=gpt-4o
+
+# 药品查询API（极速数据）
+JISU_API_KEY=your-jisu-api-key
 
 # 可选：腾讯云OCR（提高中文识别准确率）
 TENCENT_SECRET_ID=your-secret-id
@@ -61,7 +112,7 @@ sudo systemctl restart medicine-cabinet
 
 ### 5. 手机访问
 
-浏览器访问：`http://192.168.50.50:5000`
+浏览器访问：`http://192.168.50.50:5002`
 
 ## 服务管理
 
@@ -83,9 +134,13 @@ medicine-cabinet/
 ├── backend/
 │   ├── app.py              # Flask主入口
 │   ├── models.py           # 数据库模型
+│   ├── routes/
+│   │   ├── medicines.py    # 药品管理路由
+│   │   └── scan.py         # 扫描识别路由
 │   ├── utils/
 │   │   ├── ocr.py          # OCR识别
-│   │   └── ai_parser.py    # AI解析
+│   │   ├── ai_parser.py    # AI解析
+│   │   └── drug_api.py     # 药品API查询
 │   ├── requirements.txt    # Python依赖
 │   ├── .env.example        # 环境变量模板
 │   └── .gitignore
@@ -111,11 +166,17 @@ medicine-cabinet/
 
 ### 扫描识别
 
-- `POST /api/scan` - 上传图片，OCR+AI识别
+- `POST /api/scan` - 上传图片，执行4步扫描流程
+
+### 开封管理
+
+- `POST /api/medicines/:id/open` - 标记药品开封
+- `POST /api/medicines/:id/unopen` - 取消开封标记
 
 ### 统计
 
 - `GET /api/stats` - 获取统计信息
+- `GET /api/version` - 获取系统版本信息
 
 ## 支持的AI API
 
@@ -134,7 +195,9 @@ medicine-cabinet/
 1. **API Key 安全**：通过 `.env` 文件配置，不要硬编码在代码中
 2. **图片存储**：上传的药盒照片保存在 `uploads/` 目录
 3. **数据库**：SQLite 数据库保存在 `data/medicines.db`
-4. **OCR精度**：中文识别需要安装 `tesseract-ocr-chi-sim` 包
+4. **条码扫描**：需要安装 `zbarimg` (`apt install zbar-tools`)
+5. **AI识别**：建议使用视觉能力强的模型（如 gpt-4o）
+6. **别名字段**：AI不会填写别名，留待用户自定义方便记忆的名称
 
 ## License
 
