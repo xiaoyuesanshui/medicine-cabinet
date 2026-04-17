@@ -356,11 +356,9 @@ function renderMedicineList(medicines) {
             ? '<span class="medicine-badge badge-ai" title="本页资料由AI填写，注意核查">🤖 AI识别</span>'
             : '';
         
-        const locationBadges = batches
-            .filter(b => b.location)
-            .map(b => `<span class="medicine-badge badge-location">${b.location}</span>`)
-            .slice(0, 3)  // 最多显示3个位置
-            .join('');
+        const locationBadge = batches[0]?.location 
+            ? `<span class="medicine-badge badge-location">${batches[0].location}</span>` 
+            : '';
         
         // 库存数量徽章
         const countBadge = count > 1 
@@ -375,6 +373,7 @@ function renderMedicineList(medicines) {
                         ${countBadge}
                         ${aiBadge}
                         ${rxBadge}
+                        ${locationBadge}
                         <span class="medicine-badge badge-category">${categoryLabels[med.category] || '其他'}</span>
                     </div>
                 </div>
