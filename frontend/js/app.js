@@ -79,12 +79,84 @@ function switchScanMode(mode) {
     if (mode === 'barcode') {
         document.getElementById('barcodeScanArea').style.display = 'block';
         document.getElementById('photoScanArea').style.display = 'none';
+        document.getElementById('manualScanArea').style.display = 'none';
         stopBarcodeScan();
-    } else {
+        // 隐藏表单
+        document.getElementById('scanResult').style.display = 'none';
+        document.getElementById('confirmBtn').style.display = 'none';
+    } else if (mode === 'photo') {
         document.getElementById('barcodeScanArea').style.display = 'none';
         document.getElementById('photoScanArea').style.display = 'block';
+        document.getElementById('manualScanArea').style.display = 'none';
         stopBarcodeScan();
+        // 隐藏表单
+        document.getElementById('scanResult').style.display = 'none';
+        document.getElementById('confirmBtn').style.display = 'none';
+    } else if (mode === 'manual') {
+        document.getElementById('barcodeScanArea').style.display = 'none';
+        document.getElementById('photoScanArea').style.display = 'none';
+        document.getElementById('manualScanArea').style.display = 'block';
+        stopBarcodeScan();
+        // 显示空白表单，全部字段可编辑
+        showManualForm();
     }
+}
+
+// 显示手动录入表单
+function showManualForm() {
+    // 重置表单
+    const form = document.getElementById('medicineForm');
+    if (form) form.reset();
+    form.dataset.aiGenerated = 'false';
+    
+    // 移除所有 readonly
+    const readonlyFields = ['formSpecification', 'formDrugType', 'formRetailPrice', 
+                            'formApprovalNumber', 'formBarcode', 'formDescription'];
+    readonlyFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.removeAttribute('readonly');
+    });
+    
+    // 清除手动照片
+    removeManualPhoto();
+    
+    // 绑定手动拍照事件（只预览不识别）
+    document.getElementById('manualImageInput').onchange = handleManualPhoto;
+    
+    // 显示表单区域和保存按钮
+    document.getElementById('previewArea').style.display = 'none';
+    document.getElementById('scanResult').style.display = 'block';
+    document.getElementById('confirmBtn').style.display = 'inline-block';
+    
+    // 清除可能的查询信息
+    const lookupInfo = document.getElementById('lookupInfo');
+    if (lookupInfo) lookupInfo.innerHTML = '';
+}
+
+// 手动模式下拍照 - 只预览不识别
+let manualPhotoFile = null;
+
+function handleManualPhoto(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    manualPhotoFile = file;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        document.getElementById('manualPreviewImage').src = event.target.result;
+        document.getElementById('manualUploadArea').style.display = 'none';
+        document.getElementById('manualPreviewArea').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+}
+
+// 删除手动拍摄的照片
+function removeManualPhoto() {
+    manualPhotoFile = null;
+    const input = document.getElementById('manualImageInput');
+    if (input) input.value = '';
+    document.getElementById('manualUploadArea').style.display = 'block';
+    document.getElementById('manualPreviewArea').style.display = 'none';
 }
 
 // 开始条形码扫描
@@ -503,6 +575,15 @@ function resetScanModal() {
     // 重置区域显示状态 - 默认显示扫码区域
     document.getElementById('barcodeScanArea').style.display = 'block';
     document.getElementById('photoScanArea').style.display = 'none';
+    document.getElementById('manualScanArea').style.display = 'none';
+    
+    // 恢复 readonly 字段（手动录入模式会移除它们）
+    const readonlyFields = ['formSpecification', 'formDrugType', 'formRetailPrice', 
+                            'formApprovalNumber', 'formBarcode', 'formDescription'];
+    readonlyFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('readonly', true);
+    });
     
     // 重置拍照区域内部状态
     document.getElementById('uploadArea').style.display = 'block';
@@ -703,6 +784,68 @@ function fillFormWithParsedData(data) {
 // 保存药品
 async function saveMedicine() {
     const form = document.getElementById('medicineForm');
+    
+    // 判断是否手动录入模式（有照片文件）
+    if (manualPhotoFile) {
+        // 手动模式：用 FormData 上传图片 + 表单数据
+        const formData = new FormData();
+        formData.append('image', manualPhotoFile);
+        formData.append('name', document.getElementById('formName').value);
+        formData.append('ingredients', document.getElementById('formIngredients').value);
+        formData.append('indications', document.getElementById('formIndications').value);
+        formData.append('category', document.getElementById('formCategory').value);
+        
+        const prescriptionVal = document.getElementById('formPrescription').value;
+        formData.append('is_prescription', prescriptionVal === 'true' ? 'true' : prescriptionVal === 'false' ? 'false' : '');
+        
+        formData.append('expiry_date', document.getElementById('formExpiry').value || '');
+        formData.append('manufacturer', document.getElementById('formManufacturer').value);
+        formData.append('dosage', document.getElementById('formDosage').value);
+        formData.append('notes', document.getElementById('formNotes')?.value || '');
+        formData.append('specification', document.getElementById('formSpecification')?.value || '');
+        formData.append('drug_type', document.getElementById('formDrugType')?.value || '');
+        formData.append('approval_number', document.getElementById('formApprovalNumber')?.value || '');
+        formData.append('barcode', document.getElementById('formBarcode')?.value || '');
+        formData.append('retail_price', document.getElementById('formRetailPrice')?.value || '');
+        formData.append('description', document.getElementById('formDescription')?.value || '');
+        formData.append('alias', document.getElementById('formAlias')?.value || '');
+        formData.append('location_row', document.getElementById('formLocationRow')?.value || '');
+        formData.append('location_col', document.getElementById('formLocationCol')?.value || '');
+        formData.append('shelf_life_after_opening', document.getElementById('formShelfLifeAfterOpening')?.value || '');
+        formData.append('is_ai_generated', 'false');
+        formData.append('manual_mode', 'true');
+        
+        if (!formData.get('name')) {
+            showToast('请输入药品名称');
+            return;
+        }
+        if (!formData.get('expiry_date')) {
+            showToast('请输入有效期');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/medicines', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('保存成功');
+                closeScanModal();
+                loadMedicines();
+                loadStats();
+            } else {
+                showToast('保存失败');
+            }
+        } catch (error) {
+            console.error('保存失败:', error);
+            showToast('保存失败，请检查网络');
+        }
+        return;
+    }
+    
+    // 原有逻辑：扫码/拍照识别后的表单保存
     const data = {
         name: document.getElementById('formName').value,
         ingredients: document.getElementById('formIngredients').value,

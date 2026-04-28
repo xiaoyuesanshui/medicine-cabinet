@@ -1,10 +1,64 @@
 """
 药品管理API路由
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
+import os
+import uuid
+from werkzeug.utils import secure_filename
 from models import MedicineDB, Medicine, init_db
 
 medicines_bp = Blueprint('medicines', __name__)
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _parse_form_data(request):
+    """从请求中解析数据，支持 JSON 和 FormData 两种格式"""
+    if request.is_json:
+        return request.get_json(), None
+    
+    # FormData 格式（手动录入模式）
+    data = request.form.to_dict()
+    image_path = None
+    
+    # 处理图片上传
+    if 'image' in request.files:
+        file = request.files['image']
+        if file.filename and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            unique_name = f"manual_{uuid.uuid4().hex}_{filename}"
+            upload_path = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
+            file.save(upload_path)
+            image_path = unique_name
+    
+    # 转换字段类型
+    if data.get('is_prescription') == 'true':
+        data['is_prescription'] = True
+    elif data.get('is_prescription') == 'false':
+        data['is_prescription'] = False
+    elif not data.get('is_prescription'):
+        data.pop('is_prescription', None)
+    
+    if data.get('location_col'):
+        try: data['location_col'] = int(data['location_col'])
+        except: pass
+    if data.get('shelf_life_after_opening'):
+        try: data['shelf_life_after_opening'] = int(data['shelf_life_after_opening'])
+        except: pass
+    
+    # 清理空字符串为 None
+    for key in list(data.keys()):
+        if data[key] == '':
+            data[key] = None
+    
+    if image_path:
+        data['image_path'] = image_path
+    
+    return data, None
 
 
 @medicines_bp.route('/api/medicines', methods=['GET'])
@@ -35,8 +89,8 @@ def get_medicine(medicine_id):
 
 @medicines_bp.route('/api/medicines', methods=['POST'])
 def create_medicine():
-    """创建新药品"""
-    data = request.get_json()
+    """创建新药品（支持 JSON 和 FormData 两种格式）"""
+    data = _parse_form_data(request)[0]
     
     if not data or not data.get('name'):
         return jsonify({'success': False, 'error': '药品名称不能为空'}), 400
@@ -57,6 +111,11 @@ def create_medicine():
         
         medicine_id = MedicineDB.create(data)
         return jsonify({
+            'success': True,
+            'data': {'id': medicine_id}
+        }), 201
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
             'success': True,
             'data': {'id': medicine_id}
         }), 201
