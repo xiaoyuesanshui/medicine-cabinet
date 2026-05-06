@@ -122,7 +122,27 @@ def get_medicines():
                     'name': m.name,
                     'count': 0,
                     'batches': [],
-                    'info': m.to_dict()  # 保存第一个批次的完整信息用于展示
+                    # 列表页只返回卡片展示所需的精简字段，避免 to_dict() 返回大字段导致响应过大
+                    'info': {
+                        'id': m.id,
+                        'name': m.name,
+                        'ingredients': m.ingredients,
+                        'indications': m.indications,
+                        'is_prescription': m.is_prescription,
+                        'expiry_date': m.expiry_date.strftime('%Y-%m-%d') if m.expiry_date else None,
+                        'category': m.category,
+                        'manufacturer': m.manufacturer,
+                        'dosage': m.dosage,
+                        'image_path': m.image_path,
+                        'days_until_expiry': m._days_until_expiry(),
+                        'expiry_status': m._expiry_status(),
+                        'effective_expiry_date': m._effective_expiry_date().strftime('%Y-%m-%d') if m._effective_expiry_date() else None,
+                        'is_opened': m.opened_date is not None,
+                        'barcode': m.barcode,
+                        'location_col': m.location_col,
+                        'location_row': m.location_row,
+                        'location': m._format_location(),
+                    }
                 }
             grouped[key]['count'] += 1
             grouped[key]['batches'].append({
@@ -137,8 +157,6 @@ def get_medicines():
                 'location': m._format_location(),
                 'location_row': m.location_row,
                 'location_col': m.location_col,
-                'notes': m.notes,
-                'created_at': m.created_at.strftime('%Y-%m-%d %H:%M:%S') if m.created_at else None
             })
         
         # 转换为列表并按名称排序
